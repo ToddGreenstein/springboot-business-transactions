@@ -1,0 +1,21 @@
+version: '3'
+
+services:
+  cbdb:
+    build:
+      context: .
+      dockerfile: Dockerfile-CB
+    ports:
+        - "8091-8094:8091-8094"
+        - "11207-11210:11207-11210"
+        - "18091-18094:18091-18094"
+    volumes:
+        - ~/couchbase/cb_node_1:/opt/couchbase/var
+  spring:
+    build:
+      context: .
+      dockerfile: Dockerfile-spring
+    depends_on:
+      - cbdb
+    ports:
+      - "8080:8080"

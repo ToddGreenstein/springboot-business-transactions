@@ -32,6 +32,7 @@ dependencies {
 	compile('org.springframework.kafka:spring-kafka')
 	compile('org.springframework.boot:spring-boot-starter-web')
 	compile('com.github.javafaker:javafaker:0.13')
+	compile('com.googlecode.json-simple:json-simple:1.1.1')
 	testCompile('org.springframework.boot:spring-boot-starter-test')
 }
 
@@ -39,3 +40,4 @@ task(run, dependsOn: 'classes', type: JavaExec) {
 	main = 'com.example.PocApplication'
 	classpath = sourceSets.main.runtimeClasspath
 }
+

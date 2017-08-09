@@ -9,10 +9,12 @@ import com.couchbase.client.java.CouchbaseCluster;
 import com.couchbase.client.java.document.JsonDocument;
 import com.couchbase.client.java.document.json.JsonArray;
 import com.couchbase.client.java.document.json.JsonObject;
+import com.couchbase.client.java.error.DocumentAlreadyExistsException;
 import com.couchbase.client.java.error.TemporaryFailureException;
 import com.couchbase.client.java.query.AsyncN1qlQueryResult;
 import com.couchbase.client.java.query.N1qlQuery;
 import com.couchbase.client.java.query.ParameterizedN1qlQuery;
+import org.json.simple.parser.JSONParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,6 +32,8 @@ import com.github.javafaker.*;
 
 import javax.servlet.*;
 import javax.servlet.http.HttpServletResponse;
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Date;
@@ -95,35 +99,37 @@ public class PocApplication implements Filter {
 		return cluster().openBucket(bucket, password);
 	}
 
-	// Read N entries using rx async
-	// --  curl 'http://localhost:8080/readBulk?items=1000' | python -m json.tool
-	@RequestMapping(value = "/readBulk", method = RequestMethod.GET)
-	public Object readBulk(@RequestParam("items") int items) {
-		final List<JsonObject> results = new ArrayList<>();
-		Observable
-				.range(0, items)
-				.flatMap((Integer id) -> {
-					String key1 = "TEST" + id;
-					return bucket().async().get(JsonDocument.create(key1))
-							.retryWhen(anyOf(BackpressureException.class)
-									.max(10)
-									.delay(Delay.exponential(TimeUnit.MILLISECONDS, 10, 1000))
-									.doOnRetry((Integer integer, Throwable throwable, Long aLong, TimeUnit timeUnit) -> {
-										LOGGER.warn("Backpressure Exception caught, retrying");
-									})
-									.build())
-							.retryWhen(anyOf(TemporaryFailureException.class)
-									.max(10)
-									.delay(Delay.exponential(TimeUnit.MILLISECONDS, 10, 1000))
-									.build())
-							.retryWhen(anyOf(ConnectTimeoutException.class)
-									.max(5)
-									.delay(Delay.exponential(TimeUnit.MILLISECONDS, 500, 10000))
-									.build());
-				})
-				.map(doc -> results.add(doc.content())).toList().toBlocking().single();
-		return results;
+	// Seed the datastore from a source file
+	// -- curl -X POST 'http://localhost:8080/seedFromFile?threshold=1000000'
+	@RequestMapping(value = "/seedFromFile", method = RequestMethod.POST)
+	public Object doImport(@RequestParam("threshold") Integer threshold) {
+		JSONParser parser = new JSONParser();
+		Integer count = 0;
+		try {
+			FileReader in = new FileReader("./entities.txt");
+			BufferedReader br = new BufferedReader(in);
+			String line;
+			String key;
+			while ((line = br.readLine()) != null && count <= threshold) {
+				JsonObject j = JsonObject.fromJson(line);
+				if (j.get("timestamp") != null) {
+					j.put("timestamp", String.format("%1$tY-%1$tm-%1$tdT%1$tH:%1$tM:%1$tS.%1$tL%1$tz", new Date()));
+				}
+				key = UUID.randomUUID().toString();
+				try {
+					bucket().insert(JsonDocument.create(key, j));
+					count++;
+				} catch (DocumentAlreadyExistsException de) {
+					System.out.println("TRIED TO ADD:" + key);
+				}
+			}
+			in.close();
+		} catch (IOException ex) {
+			System.out.println(ex.getMessage());
+		}
+		return "datastore seeded from file";
 	}
+
 
 	// Generate a business transaction
 	// -- curl 'http://localhost:8080/seedEntities'
